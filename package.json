@@ -11,13 +11,11 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@oxc-transform/binding-win32-x64-msvc": "^0.104.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-tabs": "^1.1.13",
     "class-variance-authority": "^0.7.1",
     "fumadocs-core": "16.3.0",
-    "fumadocs-docgen": "^3.0.4",
     "fumadocs-mdx": "14.1.1",
     "fumadocs-twoslash": "^3.1.10",
     "fumadocs-typescript": "^4.0.14",

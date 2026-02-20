@@ -21,7 +21,8 @@
     "incremental": true,
     "paths": {
       "@/*": ["./*"],
-      ".source/*": ["./.source/*"]
+      ".source/*": ["./.source/*"],
+      "fumadocs-mdx:collections/*": ["./.source/*"]
     },
     "plugins": [
       {
