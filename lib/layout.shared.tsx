@@ -11,16 +11,22 @@ export function baseOptions(): BaseLayoutProps {
   return {
     nav: {
       title: (
-        <>
-          <svg
-            width="24"
+        <>         
+            {/* Light Mode Logo: Visible by default, hidden when .dark class is present */}
+          <img 
+            src="/images/Addis-Ai-Logo-Dark.png" 
+            alt="Addis AI" 
+            className="block dark:hidden pr-20"
             height="24"
-            xmlns="http://www.w3.org/2000/svg"
-            aria-label="Logo"
-          >
-            <circle cx={12} cy={12} r={12} fill="currentColor" />
-          </svg>
-          My App
+          />
+
+          {/* Dark Mode Logo: Hidden by default, visible when .dark class is present */}
+          <img 
+            src="/images/addis_ai_full.png" 
+            alt="Addis AI" 
+            className="hidden dark:block pr-20"
+            height="24"
+          />
         </>
       ),
     },

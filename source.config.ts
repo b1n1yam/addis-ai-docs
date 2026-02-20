@@ -16,7 +16,12 @@ import {
   remarkSteps,
 } from 'fumadocs-core/mdx-plugins';
 import { remarkAutoTypeTable } from 'fumadocs-typescript';
-import type { ElementContent } from 'hast';
+
+type HastNode = {
+  type: string;
+  value?: string;
+  children?: HastNode[];
+};
 
 export const docs = defineDocs({
   docs: {
@@ -49,7 +54,6 @@ export const blog = defineCollections({
 });
 
 export default defineConfig({
-  lastModifiedTime: 'git',
   mdxOptions: {
     rehypeCodeOptions: {
       lazy: true,
@@ -67,10 +71,10 @@ export default defineConfig({
         {
           name: '@shikijs/transformers:remove-notation-escape',
           code(hast) {
-            function replace(node: ElementContent): void {
-              if (node.type === 'text') {
+            function replace(node: HastNode): void {
+              if (node.type === 'text' && typeof node.value === 'string') {
                 node.value = node.value.replace('[\\!code', '[!code');
-              } else if ('children' in node) {
+              } else if (Array.isArray(node.children)) {
                 for (const child of node.children) {
                   replace(child);
                 }

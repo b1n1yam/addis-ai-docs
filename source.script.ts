@@ -1,16 +1,15 @@
 import { defineConfig } from 'fumadocs-mdx/config';
 import { visit } from 'unist-util-visit';
-import type { Root } from 'mdast';
 
 export { blog, docs } from './source.config';
 
 function remarkElementIds() {
-  return (tree: Root, vfile: unknown) => {
+  return (tree: unknown, vfile: unknown) => {
     const file = vfile as { data?: { elementIds?: string[] } };
     file.data ??= {};
     file.data.elementIds ??= [];
 
-    visit(tree, 'mdxJsxFlowElement', (element) => {
+    visit(tree as any, 'mdxJsxFlowElement', (element) => {
       if (!element.name || !element.attributes) return;
 
       const idAttr = element.attributes.find(

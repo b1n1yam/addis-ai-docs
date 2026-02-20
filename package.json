@@ -3,13 +3,15 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
+    "prebuild": "fumadocs-mdx",
     "build": "next build",
-    "dev": "next dev --turbo",
+    "dev": "next dev",
     "start": "next start",
     "postinstall": "fumadocs-mdx",
     "lint": "eslint"
   },
   "dependencies": {
+    "@oxc-transform/binding-win32-x64-msvc": "^0.104.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-tabs": "^1.1.13",

@@ -1,0 +1,279 @@
+---
+title: Realtime API
+description: Low-latency, bidirectional voice conversations via WebSockets.
+icon: Zap
+---
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Mic, Activity, BookOpen, Tractor, Phone, Car } from 'lucide-react';
+
+The **Realtime API** enables fluid, natural voice conversations. It uses **WebSockets** to stream audio bi-directionally, achieving response times under **300ms**.
+
+It is powered by **`አሌፍ-1.2-realtime-audio`**, allowing for natural interruptions and back-channeling.
+
+## Endpoint
+
+<div className="flex items-center gap-2 border border-fd-border p-3 rounded-lg bg-fd-muted/50 font-mono text-sm my-4">
+  <span className="bg-orange-500 text-white px-2 py-0.5 rounded text-xs font-bold">WSS</span>
+  <span className="text-fd-foreground">wss://api.addisassistant.com/v1/realtime</span>
+</div>
+
+---
+
+## Industry Use Cases
+
+Our Realtime model is already deployed across key Ethiopian sectors. You can test these specific **Agents** in our Playground.
+
+<div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+  <div className="p-4 border border-fd-border rounded-lg bg-fd-card">
+    <div className="flex items-center gap-2 mb-2 font-bold text-fd-foreground">
+      <Phone className="w-4 h-4 text-blue-500" /> Telecom Assistant
+    </div>
+    <p className="text-xs text-fd-muted-foreground">
+      Automated customer support for balance checks, package purchasing, and troubleshooting in Amharic.
+    </p>
+  </div>
+  
+  <div className="p-4 border border-fd-border rounded-lg bg-fd-card">
+    <div className="flex items-center gap-2 mb-2 font-bold text-fd-foreground">
+      <Car className="w-4 h-4 text-orange-500" /> Ride Hailing
+    </div>
+    <p className="text-xs text-fd-muted-foreground">
+      Voice-first driver negotiation and location finding. "Where are you?" "I'm at Bole near the bank."
+    </p>
+  </div>
+
+  <div className="p-4 border border-fd-border rounded-lg bg-fd-card">
+    <div className="flex items-center gap-2 mb-2 font-bold text-fd-foreground">
+      <Tractor className="w-4 h-4 text-green-500" /> Farmer's Assistant
+    </div>
+    <p className="text-xs text-fd-muted-foreground">
+      Agricultural advisory for weather updates, crop disease diagnosis, and market prices in local dialects.
+    </p>
+  </div>
+</div>
+
+---
+
+## Audio Format Requirements
+
+<Callout type="error" title="Critical: Audio Encoding">
+  The API expects **16-bit Signed Integer PCM (PCM16)** audio.
+  
+  **Developer Warning:** The standard browser `AudioContext` returns **32-bit Float** data (-1.0 to 1.0) by default. If you send this directly, it will sound like static noise. You **must** convert Float32 to Int16 before sending it over the WebSocket.
+</Callout>
+
+| Property | Value |
+| :--- | :--- |
+| **Encoding** | PCM 16-bit (Little Endian) |
+| **Sample Rate** | 24,000Hz (Recommended) or 16,000Hz |
+| **Channels** | Mono (1 Channel) |
+
+---
+
+## Integration Guide
+
+### 1. Browser Implementation (JavaScript)
+This example establishes a connection, captures microphone audio, **converts it from Float32 to PCM16**, and handles the audio stream.
+
+<Tabs items={['JavaScript (Browser)', 'Python']}>
+  <Tab value="JavaScript (Browser)">
+    ```javascript
+    // Configuration
+    const WS_URL = "wss://api.addisassistant.com/v1/realtime";
+    const API_KEY = "sk_YOUR_KEY";
+
+    let socket;
+    let audioContext;
+    let processor;
+
+    async function startRealtime() {
+      // 1. Initialize WebSocket
+      socket = new WebSocket(WS_URL);
+      socket.binaryType = "arraybuffer";
+
+      socket.onopen = () => {
+        console.log("Connected to Addis AI Realtime");
+        
+        // Send initial config
+        socket.send(JSON.stringify({
+          type: "session.update",
+          session: {
+            api_key: API_KEY,
+            language: "am"
+          }
+        }));
+      };
+
+      socket.onmessage = (event) => {
+        // Handle incoming binary audio or JSON events
+        if (event.data instanceof ArrayBuffer) {
+            playAudioChunk(event.data);
+        } else {
+            console.log("Event:", JSON.parse(event.data));
+        }
+      };
+
+      // 2. Initialize Microphone
+      audioContext = new (window.AudioContext || window.webkitAudioContext)({
+        sampleRate: 24000, 
+      });
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const source = audioContext.createMediaStreamSource(stream);
+      
+      // Create a ScriptProcessor to access raw audio data
+      processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+      processor.onaudioprocess = (e) => {
+        if (socket.readyState === WebSocket.OPEN) {
+          const inputData = e.inputBuffer.getChannelData(0); // This is Float32
+          
+          // CRITICAL: Convert Float32 to Int16 (PCM)
+          const pcm16Data = floatTo16BitPCM(inputData);
+          
+          socket.send(pcm16Data.buffer);
+        }
+      };
+
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+    }
+
+    // --- Helper: Convert Float32 to Int16 ---
+    function floatTo16BitPCM(float32Array) {
+      const int16Array = new Int16Array(float32Array.length);
+      for (let i = 0; i < float32Array.length; i++) {
+        const s = Math.max(-1, Math.min(1, float32Array[i]));
+        int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+      return int16Array;
+    }
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    import asyncio
+    import websockets
+    import pyaudio
+    import json
+
+    # Audio Config
+    FORMAT = pyaudio.paInt16 # Native 16-bit
+    CHANNELS = 1
+    RATE = 24000
+    CHUNK = 1024
+
+    async def realtime_chat():
+        uri = "wss://api.addisassistant.com/v1/realtime"
+        
+        async with websockets.connect(uri) as websocket:
+            # 1. authenticate
+            await websocket.send(json.dumps({
+                "type": "session.update",
+                "session": { "api_key": "sk_YOUR_KEY", "language": "am" }
+            }))
+
+            # 2. Setup Microphone
+            p = pyaudio.PyAudio()
+            stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, 
+                            input=True, frames_per_buffer=CHUNK)
+
+            print("Listening... (Press Ctrl+C to stop)")
+
+            try:
+                while True:
+                    # Read raw PCM16 bytes from mic
+                    data = stream.read(CHUNK)
+                    await websocket.send(data)
+                    
+            except KeyboardInterrupt:
+                pass
+            finally:
+                stream.stop_stream()
+                stream.close()
+                p.terminate()
+
+    asyncio.run(realtime_chat())
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Protocol & Events
+
+The WebSocket handles bidirectional traffic.
+
+### 1. Client to Server
+The client sends **Binary Frames** containing raw PCM16 audio chunks.
+
+### 2. Server to Client
+The server sends **Binary Frames** (Audio Response) and **Text Frames** (JSON Events).
+
+#### AI Audio Response
+The server streams the AI's voice as binary PCM16 chunks. You should buffer and play these immediately.
+
+#### Turn Complete & Usage
+When the AI finishes speaking, the server sends a completion event with billing details.
+
+```json
+{
+  "serverContent": {
+    "turnComplete": true
+  },
+  "usageMetadata": {
+    "totalBilledAudioDurationSeconds": 5.2
+  }
+}
+```
+#### Warning Messages
+Sent if there are non-critical issues, such as billing thresholds.
+
+```json
+{
+  "type": "warning",
+  "message": "Your wallet balance is low. Please top up to avoid service interruption."
+}
+```
+
+#### Error Messages
+Sent if a critical failure occurs.
+
+```json
+{
+  "error": {
+    "message": "AI service error",
+    "status": 500,
+    "timestamp": "2025-07-15T10:00:00.000Z"
+  }
+}
+```
+---
+## Capabilities Roadmap
+We are rapidly expanding the Realtime engine.
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+<div className="p-4 border border-fd-border rounded-lg bg-fd-card">
+<h3 className="font-bold flex items-center gap-2 mb-2 text-fd-foreground">
+<Activity className="w-4 h-4 text-green-500" />
+VAD (Voice Activity Detection)
+</h3>
+<p className="text-sm text-fd-muted-foreground">
+The model currently uses server-side VAD to determine when the user has stopped speaking.
+</p>
+</div>
+<div className="p-4 border border-fd-border rounded-lg bg-fd-card opacity-80">
+<div className="flex items-center justify-between mb-2">
+<h3 className="font-bold flex items-center gap-2 text-fd-foreground">
+<BookOpen className="w-4 h-4 text-purple-500" />
+Knowledge Base
+</h3>
+<span className="text-[10px] bg-blue-500/10 text-blue-500 px-2 py-0.5 rounded-full border border-blue-500/20 font-medium">Coming Soon</span>
+</div>
+<p className="text-sm text-fd-muted-foreground">
+Soon you will be able to attach PDFs or Text documents to the Realtime session. This will allow the voice assistant to answer questions specifically based on your uploaded data (RAG).
+</p>
+</div>
+</div>
