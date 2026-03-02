@@ -65,17 +65,17 @@ export function ArchitectureFlow() {
 
         {/* ================= NODE 2: SERVER ================= */}
         <div className="flex flex-col items-center gap-3 relative">
-          {/* Badge pop-up */}
-          <div className={cn(
-            "absolute -top-10 transition-all duration-500 ease-out",
-            step >= 2 ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
-          )}>
-            <span className="px-2 py-0.5 bg-blue-500/10 text-blue-600 border border-blue-500/20 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-sm">
-              Secure Zone
-            </span>
-          </div>
-
           <div className={cn(nodeBaseClass, step >= 2 ? activeNodeClass : inactiveNodeClass, "relative")}>
+            {/* Badge pinned to the backend node to avoid overflow/clipping */}
+            <div className={cn(
+              "absolute left-1/2 top-0 z-30 -translate-x-1/2 -translate-y-1/2 transition-all duration-500 ease-out",
+              step >= 2 ? "opacity-100 scale-100" : "opacity-0 scale-95"
+            )}>
+              <span className="whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider text-blue-500 border border-blue-500/40 bg-fd-background/80 backdrop-blur-md shadow-sm">
+                Secure Zone
+              </span>
+            </div>
+
             {/* Lock Icon Overlay */}
             <div className="absolute -right-2 -top-2 bg-fd-background rounded-full p-1 border border-fd-border shadow-sm z-20">
                <Lock className={cn("w-3 h-3", step >= 2 ? "text-blue-600" : "text-fd-muted-foreground")} />
