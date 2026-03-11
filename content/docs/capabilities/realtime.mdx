@@ -7,6 +7,7 @@ icon: Zap
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import { Callout } from 'fumadocs-ui/components/callout';
+import { RealtimeVoiceDemo } from '@/components/realtime-voice-demo';
 import { Mic, Activity, BookOpen, Tractor, Phone, Car } from 'lucide-react';
 
 The **Realtime API** enables fluid, natural voice conversations. It uses **WebSockets** to stream audio bi-directionally, achieving response times under **300ms**.
@@ -45,27 +46,27 @@ Our Realtime model is already deployed across key African sectors. You can test 
     <div className="flex items-center gap-2 mb-2 font-bold text-fd-foreground">
       <Phone className="w-4 h-4 text-blue-500" /> Telecom Assistant
     </div>
-    <p className="text-xs text-fd-muted-foreground">
+    <div className="text-xs text-fd-muted-foreground">
       Automated customer support for balance checks, package purchasing, and troubleshooting in Amharic.
-    </p>
+    </div>
   </div>
   
   <div className="p-4 border border-fd-border rounded-lg bg-fd-card">
     <div className="flex items-center gap-2 mb-2 font-bold text-fd-foreground">
       <Car className="w-4 h-4 text-orange-500" /> Ride Hailing
     </div>
-    <p className="text-xs text-fd-muted-foreground">
+    <div className="text-xs text-fd-muted-foreground">
       Voice-first driver negotiation and location finding. "Where are you?" "I'm at Bole near the bank."
-    </p>
+    </div>
   </div>
 
   <div className="p-4 border border-fd-border rounded-lg bg-fd-card">
     <div className="flex items-center gap-2 mb-2 font-bold text-fd-foreground">
       <Tractor className="w-4 h-4 text-green-500" /> Farmer's Assistant
     </div>
-    <p className="text-xs text-fd-muted-foreground">
+    <div className="text-xs text-fd-muted-foreground">
       Agricultural advisory for weather updates, crop disease diagnosis, and market prices in local dialects.
-    </p>
+    </div>
   </div>
 </div>
 
@@ -421,6 +422,178 @@ Sent if a critical failure occurs.
   - You used the correct endpoint.
   - Auth query is valid (`apiKey` or `jwt`).
   - Client audio is sent as JSON (`data` + `mimeType`), not raw binary.
+
+---
+
+## Live Interactive Demo
+
+Use the embedded tool below to test the Realtime API directly from this page.
+
+<RealtimeVoiceDemo />
+
+### Standalone HTML (Local Testing)
+
+Use this standalone file if you want to run the same flow outside the docs site.
+
+```html
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Realtime Voice Test</title>
+  </head>
+  <body style="font-family: Arial, sans-serif; margin: 24px;">
+    <h2>Realtime Voice Test</h2>
+    <input id="apiKey" type="password" placeholder="sk_..." style="width: 340px; padding: 8px;" />
+    <button id="startBtn">Start</button>
+    <button id="stopBtn" disabled>Stop</button>
+    <pre id="log" style="margin-top: 16px; border: 1px solid #ddd; padding: 12px; min-height: 140px;"></pre>
+
+    <script>
+      const WS_URL = "wss://relay.addisassistant.com/ws";
+      const INPUT_RATE = 16000;
+      const OUTPUT_RATE = 24000;
+
+      let ws;
+      let inputCtx;
+      let outputCtx;
+      let stream;
+      let sourceNode;
+      let processorNode;
+      let muteNode;
+      let canStream = false;
+      let nextStartTime = 0;
+
+      const logEl = document.getElementById("log");
+      const startBtn = document.getElementById("startBtn");
+      const stopBtn = document.getElementById("stopBtn");
+      const apiKeyEl = document.getElementById("apiKey");
+
+      function log(message) {
+        const t = new Date().toLocaleTimeString();
+        logEl.textContent += `[${t}] ${message}\n`;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      function f32ToPcm16(float32) {
+        const out = new Int16Array(float32.length);
+        for (let i = 0; i < float32.length; i++) {
+          const s = Math.max(-1, Math.min(1, float32[i]));
+          out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+        }
+        return out;
+      }
+
+      function abToBase64(arrayBuffer) {
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = "";
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        return btoa(binary);
+      }
+
+      function base64ToAb(base64) {
+        const bin = atob(base64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return bytes.buffer;
+      }
+
+      async function playPcm16(arrayBuffer) {
+        if (!outputCtx) return;
+        const pcm16 = new Int16Array(arrayBuffer);
+        const f32 = new Float32Array(pcm16.length);
+        for (let i = 0; i < pcm16.length; i++) f32[i] = pcm16[i] / 32768;
+
+        const buffer = outputCtx.createBuffer(1, f32.length, OUTPUT_RATE);
+        buffer.copyToChannel(f32, 0);
+        const src = outputCtx.createBufferSource();
+        src.buffer = buffer;
+        src.connect(outputCtx.destination);
+        const startAt = Math.max(outputCtx.currentTime, nextStartTime);
+        src.start(startAt);
+        nextStartTime = startAt + buffer.duration;
+      }
+
+      async function stop() {
+        canStream = false;
+        if (ws && (ws.readyState === 0 || ws.readyState === 1)) ws.close(1000, "client-stop");
+        ws = null;
+
+        try { if (processorNode) processorNode.disconnect(); } catch {}
+        try { if (sourceNode) sourceNode.disconnect(); } catch {}
+        try { if (muteNode) muteNode.disconnect(); } catch {}
+        if (stream) stream.getTracks().forEach((t) => t.stop());
+
+        if (inputCtx) await inputCtx.close().catch(() => {});
+        if (outputCtx) await outputCtx.close().catch(() => {});
+        inputCtx = outputCtx = null;
+        stream = sourceNode = processorNode = muteNode = null;
+        nextStartTime = 0;
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        log("Stopped.");
+      }
+
+      async function start() {
+        const apiKey = apiKeyEl.value.trim();
+        if (!apiKey) return log("Missing API key.");
+
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+
+        outputCtx = new AudioContext({ sampleRate: OUTPUT_RATE });
+        await outputCtx.resume();
+        nextStartTime = outputCtx.currentTime;
+
+        inputCtx = new AudioContext({ sampleRate: INPUT_RATE });
+        await inputCtx.resume();
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        sourceNode = inputCtx.createMediaStreamSource(stream);
+        processorNode = inputCtx.createScriptProcessor(2048, 1, 1);
+        muteNode = inputCtx.createGain();
+        muteNode.gain.value = 0;
+
+        processorNode.onaudioprocess = (event) => {
+          if (!canStream || !ws || ws.readyState !== 1) return;
+          const f32 = event.inputBuffer.getChannelData(0);
+          const pcm16 = f32ToPcm16(f32);
+          ws.send(JSON.stringify({ data: abToBase64(pcm16.buffer), mimeType: "audio/pcm;rate=16000" }));
+        };
+
+        sourceNode.connect(processorNode);
+        processorNode.connect(muteNode);
+        muteNode.connect(inputCtx.destination);
+
+        const url = new URL(WS_URL);
+        url.searchParams.set("apiKey", apiKey);
+        ws = new WebSocket(url.toString());
+
+        ws.onopen = () => log("Connected. Waiting for setupComplete...");
+
+        ws.onmessage = async (event) => {
+          const msg = JSON.parse(event.data);
+          if (msg.setupComplete || (msg.type === "status" && /ready/i.test(msg.message || ""))) {
+            canStream = true;
+            return log("Setup complete. Streaming live.");
+          }
+          const b64 = msg?.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+          if (typeof b64 === "string" && b64.length) await playPcm16(base64ToAb(b64));
+          if (msg?.error) log(`Server error: ${JSON.stringify(msg.error)}`);
+        };
+
+        ws.onclose = (e) => log(`Closed code=${e.code} reason=${e.reason || "n/a"}`);
+        ws.onerror = () => log("WebSocket error");
+      }
+
+      startBtn.onclick = () => void start();
+      stopBtn.onclick = () => void stop();
+      window.addEventListener("beforeunload", () => void stop());
+    </script>
+  </body>
+</html>
+```
+
 ---
 ## Capabilities Roadmap
 We are rapidly expanding the Realtime engine.
@@ -430,9 +603,9 @@ We are rapidly expanding the Realtime engine.
 <Activity className="w-4 h-4 text-green-500" />
 VAD (Voice Activity Detection)
 </h3>
-<p className="text-sm text-fd-muted-foreground">
+<div className="text-sm text-fd-muted-foreground">
 The model currently uses server-side VAD to determine when the user has stopped speaking.
-</p>
+</div>
 </div>
 <div className="p-4 border border-fd-border rounded-lg bg-fd-card opacity-80">
 <div className="flex items-center justify-between mb-2">
@@ -442,8 +615,8 @@ Knowledge Base
 </h3>
 <span className="text-[10px] bg-blue-500/10 text-blue-500 px-2 py-0.5 rounded-full border border-blue-500/20 font-medium">Coming Soon</span>
 </div>
-<p className="text-sm text-fd-muted-foreground">
+<div className="text-sm text-fd-muted-foreground">
 Soon you will be able to attach PDFs or Text documents to the Realtime session. This will allow the voice assistant to answer questions specifically based on your uploaded data (RAG).
-</p>
+</div>
 </div>
 </div>
